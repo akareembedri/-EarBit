@@ -10,6 +10,7 @@ from sklearn.feature_selection import SelectFromModel
 from statistics import mean,variance,stdev
 import os
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
+from sklearn.metrics import make_scorer 
 
 #intial veariables 
 winSize=sys.argv[1]
@@ -66,6 +67,14 @@ def analysis(testLabels,resultsValues,mainClass):
 	recall=100*tp/(tp+fn)
 	return acc,prec,recall,cm
 
+def loo_eating_score(gt,pred):
+	#testData=gt[0]
+	#trainData=gt[1]
+	#testLabel=pred[0]
+	#trainLabel=pred[1]
+	print "data shape",len(gt), len(gt[0])
+	print "prediction shape",len(pred),len(pred[0])
+	return 0.11111
 
 
 #load data
@@ -124,6 +133,7 @@ testData=[]
 testLabels=[]
 count=0
 oldnFeatures=0
+loo_score=make_socrer(loo_eating_score, greater_is_better=True)
 while(featureLeft>1 and featureLeft != oldnFeatures  ):
 	count+=1
 	oldnFeatures=featureLeft
@@ -151,7 +161,7 @@ while(featureLeft>1 and featureLeft != oldnFeatures  ):
 	
 		rfc=RandomForestClassifier(n_estimators=nTrees)
 		#feature selection
-		sffs = SFS(rfc,k_features=(1,((6*14)-1)),forward=True,floating=True,verbose=2,scoring='accuracy',cv=0,n_jobs=-1)
+		sffs = SFS(rfc,k_features=(1,3),forward=True,floating=True,verbose=2,scoring=loo_score,cv=0,n_jobs=-1)
 		sffs = sffs.fit(np.array(trainData[i]),np.array(trainLabels[i]))
 		#plot_sfs(sffs.get_metric_dict(), kind='std_err');
 		'''rfc.fit(trainData[i],trainLabels[i])
@@ -172,7 +182,7 @@ while(featureLeft>1 and featureLeft != oldnFeatures  ):
 		#resultsFile.write(subjects[i]+"\n")
 		#############################
 		'''
-
+		print sffs.subsets_
 		print('\nSequential Floating Forward Selection:')
 		print(sffs.k_feature_idx_)
 		print('CV Score:')
