@@ -72,8 +72,9 @@ def loo_eating_score(gt,pred):
 	#trainData=gt[1]
 	#testLabel=pred[0]
 	#trainLabel=pred[1]
-	print "data shape",len(gt), len(gt[0])
-	print "prediction shape",len(pred),len(pred[0])
+	print "data shape",len(gt), len(gt[0]),gt[0]
+	print "prediction shape",len(pred),len(pred[0]),pred[0]
+	#print(sffs.k_feature_idx_)
 	return 0.11111
 
 
@@ -103,7 +104,9 @@ def loadData():
 		[[trainLabels.append(y) for y in x] for x in trnLabels]
 		testLabels=[]
 		[[testLabels.append(y) for y in x] for x in tstLabels]
-
+		print "//////////training data shape",len(trainData), len(trainData[0])
+		print "//////////training prediction shape",len(trainLabels),len(trainLabels[0])
+		print trainLabels[0]
 		allTrainData.append(trainData)
 		allTestData.append(testData)
 		allTrainLabel.append(trainLabels)
@@ -133,7 +136,7 @@ testData=[]
 testLabels=[]
 count=0
 oldnFeatures=0
-loo_score=make_socrer(loo_eating_score, greater_is_better=True)
+loo_score=make_scorer(loo_eating_score, greater_is_better=True)
 while(featureLeft>1 and featureLeft != oldnFeatures  ):
 	count+=1
 	oldnFeatures=featureLeft
@@ -160,9 +163,14 @@ while(featureLeft>1 and featureLeft != oldnFeatures  ):
 		# define the RF prameters, train and test
 	
 		rfc=RandomForestClassifier(n_estimators=nTrees)
+		rfc.fit(trainData[i],trainLabels[i])
 		#feature selection
+		print "//////////training data shape",len(trainData[i]), len(trainData[i][0])
+		print "//////////training prediction shape",len(trainLabels[i]),len(trainLabels[i][0])
+		print 
 		sffs = SFS(rfc,k_features=(1,3),forward=True,floating=True,verbose=2,scoring=loo_score,cv=0,n_jobs=-1)
 		sffs = sffs.fit(np.array(trainData[i]),np.array(trainLabels[i]))
+
 		#plot_sfs(sffs.get_metric_dict(), kind='std_err');
 		'''rfc.fit(trainData[i],trainLabels[i])
 		score=rfc.score(testData[i],testLabels[i])
