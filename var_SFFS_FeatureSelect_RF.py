@@ -10,22 +10,28 @@ from sklearn.feature_selection import SelectFromModel
 from statistics import mean,variance,stdev
 import os
 from mlxtend.feature_selection import SequentialFeatureSelector as SFS
-from sklearn.metrics import make_scorer 
+from sklearn.pipeline import Pipeline
+from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import LeaveOneGroupOut
+from sklearn.metrics import make_scorer
+from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
+
+
 
 #intial veariables 
 winSize=sys.argv[1]
 testName=winSize+'sec_1sSlid_DS_lpf_all_4C_vR'+'_EarNeck_noMM_fft_autoCorFull0025'
 
 classes =[ 'eating' , 'silent' , 'talking' , 'walking']#['other','walking'] #
-importance=[]
+
 mainClass='eating'
-CM=[[0 for col in range(len(classes))] for row in range(len(classes))]
+
 nTrees=100
-projectDir='/media/mgoel1/86646EC1646EB399/Statistical_Datasets/'+testName+'/'
+projectDir='/root/soundBite/datasets/Statistical_Datasets/'+testName+'/'
 subjects = ['April2Sub1','April2Sub3', 'April2Sub4', 'March24Sub1','March24Sub3','March24Sub4',\
 'March25Sub' , 'March28Sub1', 'March28Sub3', 'March28Sub4']
 nFeatuers=14*6
-FeatuerLeft=[True]*nFeatuers
+
 
 #exteact one column from a list
 def column(matrix, i):
@@ -56,230 +62,139 @@ def analysis(testLabels,resultsValues,mainClass):
 		elif resultsValues[l]!=mainClass and testLabels[l]!=mainClass:
 			tn+=1
 		elif testLabels[l]!=resultsValues[l] and resultsValues[l]==mainClass:
-			fp+=1
-		
+			fp+=1		
 
 		cm[classes.index(testLabels[l])][classes.index(resultsValues[l])]+=1
 		
 	total=tp+tn+fp+fn
+	
 	acc=100*(tp+tn)/total
-	prec=100*tp/(tp+fp)
-	recall=100*tp/(tp+fn)
-	return acc,prec,recall,cm
+	if (tp+fp)==0:
+		prec=0
+	else:
+		prec=100*tp/(tp+fp)
+	if (tp+fp)==0:
+		recall=0
+	else:
+		recall=100*tp/(tp+fn)
+	if (prec+recall)==0:
+		f1=0
+	else:
+		f1=2*(prec*recall)/(prec+recall)
+	return acc,prec,recall,cm,f1
 
-def loo_eating_score(gt,pred):
-	#testData=gt[0]
-	#trainData=gt[1]
-	#testLabel=pred[0]
-	#trainLabel=pred[1]
-	print "data shape",len(gt), len(gt[0]),gt[0]
-	print "prediction shape",len(pred),len(pred[0]),pred[0]
-	#print(sffs.k_feature_idx_)
-	return 0.11111
-
+def my_custom_loss_func(ground_truth, predictions):
+	print "ground_truth=",len(ground_truth)
+	print ground_truth.shape, predictions.shape
+	acc,prec,recall,cm,f1=analysis(ground_truth, predictions,mainClass)
+	print "f1= ",f1
+	return f1
 
 #load data
-allTrainData=[]
-allTestData=[]
-allTrainLabel=[]
-allTestLabel=[]
-def loadData():
-	for i in range(len(subjects)):
+
+def loadDataOnce():
+	allData=[]
+	allLabel=[]
+	groups=[]
+	for i in range(3):#(len(subjects)):
 		
 		print "load ", subjects[i]
 		#load training and testing data
-		trainDataFileName=projectDir+subjects[i]+'_trainData.txt'
-		trainDataFile=open(trainDataFileName,'r')
-		trainData=map(str.split,trainDataFile)
+		
 
 		testDataFileName=projectDir+subjects[i]+'_testData.txt'
 		testDataFile=open(testDataFileName,'r')
 		testData=map(str.split,testDataFile)
 
-		trainData, trnLabels,ntrainFile = zip(*[(s[2:], [s[0]],[s[1]]) for s in trainData])
+
 		testData, tstLabels,ntestFile = zip(*[(s[2:], [s[0]],[s[1]]) for s in testData])
 		testData=[[float(y) for y in x] for x in testData]
-		trainData=[[float(y) for y in x] for x in trainData]
-		trainLabels=[]
-		[[trainLabels.append(y) for y in x] for x in trnLabels]
 		testLabels=[]
 		[[testLabels.append(y) for y in x] for x in tstLabels]
-		print "//////////training data shape",len(trainData), len(trainData[0])
-		print "//////////training prediction shape",len(trainLabels),len(trainLabels[0])
-		print trainLabels[0]
-		allTrainData.append(trainData)
-		allTestData.append(testData)
-		allTrainLabel.append(trainLabels)
-		allTestLabel.append(testLabels)
-	return allTrainData,allTestData,allTrainLabel,allTestLabel
+		print len(testData)
+		allData=allData+testData
+		allLabel=allLabel+testLabels
+		groups=groups+[i+1]*len(testData)
 
-AccMean=[]
-PrecMean=[]
-RecallMean=[]
-ImportanceMean=[]
+	return allData,allLabel,groups
 
-AccVar=[]
-PrecVar=[]
-RecallVar=[]
+def genFeatuerName(fList):
+	fList=list(fList)
+	featureNames=[]
+	featuresName=['var','rms','zc','zcv','ent','np','mxp','fpz','lp','hp','psd','mxA','mxF','DC']
+	axisName=['Ex','Ey','Ez','Nx','Ny','Nz']
+	featureCode=[]
+	for x in axisName:
+    		for f in featuresName:
+        		featureCode.append(x+'_'+f)
 
-Importanceittr=[]
-featureList=range(nFeatuers)
+	for i in fList:
+   		 featureNames.append(featureCode[i])
+	return featureNames
 
-
-resultsFileName=projectDir+'FeatureSelectionResults.txt'
+####### Featuer selection process using SFFS ######
+resultsFileName=projectDir+'SFFS_FeatureSelectionResults.txt'
 resultsFile=open(resultsFileName,'w')
-allTrainData,allTestData,allTrainLabel,allTestLabel=loadData()
-featureLeft=nFeatuers
-trainData=[]
-trainLabels=[]
-testData=[]
-testLabels=[]
-count=0
-oldnFeatures=0
-loo_score=make_scorer(loo_eating_score, greater_is_better=True)
-while(featureLeft>1 and featureLeft != oldnFeatures  ):
-	count+=1
-	oldnFeatures=featureLeft
-	ACC=[]
-	PREC=[]
-	RECALL=[]
-	IMPORT=[]
-	for i in range(len(subjects)):
-		resultsFile.write("=================================================================================\n")
-        	resultsFile.write(subjects[i]+"\n")
-		print subjects[i]
-		#dfine dataset
-		if (featureLeft==nFeatuers):
-			trainData.append(allTrainData[i])
-			trainLabels.append(allTrainLabel[i])
-			testData.append(allTestData[i])
-			testLabels.append(allTestLabel[i])
-		else:
-			trainData[i]=[]
-			testData[i]=[]
-			trainData[i]=trainData_new[i]
-			testData[i]=testData_new[i]
-			
-		# define the RF prameters, train and test
-	
-		rfc=RandomForestClassifier(n_estimators=nTrees)
-		rfc.fit(trainData[i],trainLabels[i])
-		#feature selection
-		print "//////////training data shape",len(trainData[i]), len(trainData[i][0])
-		print "//////////training prediction shape",len(trainLabels[i]),len(trainLabels[i][0])
-		print 
-		sffs = SFS(rfc,k_features=(1,3),forward=True,floating=True,verbose=2,scoring=loo_score,cv=0,n_jobs=-1)
-		sffs = sffs.fit(np.array(trainData[i]),np.array(trainLabels[i]))
+#generate a score function that use F1 score for eating detection
+score = make_scorer(my_custom_loss_func, greater_is_better=True)
 
-		#plot_sfs(sffs.get_metric_dict(), kind='std_err');
-		'''rfc.fit(trainData[i],trainLabels[i])
-		score=rfc.score(testData[i],testLabels[i])
-		# detailed results
-		resultsValues=rfc.predict(testData[i])
-		# detailed results
-		acc,prec,recall,cm=analysis(testLabels[i],resultsValues,mainClass)
-		importance= rfc.feature_importances_  
-		ACC.append(acc)
-		PREC.append(prec)
-		RECALL.append(recall)
-		IMPORT.append(importance)
-		############print to file #################
-		#resultsFile.write("acc, pre, recall\n")
-		#resultsFile.write(subjects[i]+"\n")
-		#resultsFile.write("acc, pre, recall\n")
-		#resultsFile.write(subjects[i]+"\n")
-		#############################
-		'''
-		print sffs.subsets_
-		print('\nSequential Floating Forward Selection:')
-		print(sffs.k_feature_idx_)
-		print('CV Score:')
-		print(sffs.k_score_)
-		#model = SelectFromModel(rfc, prefit=True, threshold=0.005)#, threshold=0.02
-		#trainData_temp = sffs.transform(np.array(trainData[i]))
+#load data
+allData,allLabel,groups=loadDataOnce()
+nFeatures=len(allData[0])
+X = np.array(allData)
+y = np.array(allLabel)
+#Generate splits 
+logo = LeaveOneGroupOut()
+sp=logo.split(X, y, groups=groups)
+split=[]
+
+for train_index, test_index in sp:
+	#print("TRAIN:", train_index, "TEST:", test_index)
+	#X_train, X_test = X[train_index], X[test_index]
+	#y_train, y_test = y[train_index], y[test_index]
+	#print(train_index.shape,test_index.shape)
+	#print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
+	split.append((train_index, test_index))
+
+#estimator 
+rfc=RandomForestClassifier(n_estimators=nTrees)
+
+#feature selection
+sffs = SFS(rfc,k_features=(1,3),forward=True,floating=True,verbose=2,scoring=score,cv=split,n_jobs=-1)
+sffs = sffs.fit(X,y)
+# print results
+print('\nSequential Floating Forward Selection:')
+print(sffs.k_feature_idx_)
+print genFeatuerName(sffs.k_feature_idx_)
+print('CV Score:')
+print(sffs.k_score_)
+print("Deataled results")
+print(sffs.subsets_)
+print ("full list of featuers:")
+f= genFeatuerName(range(nFeatures))
+for i in f:
+    print f.index(i), i
 
 
-'''
-		#newFeatureIndex=model.get_support(indices=False)
-		#newFeatureIndex=maxFLength(newFeatureIndex,Oldind)
-		print "==============================================================================="
-		
-		FeatuerLeft=[a and b for a,b in zip(FeatuerLeft, newFeatureIndex)]
-		
-		
-		
-	print "[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[[["
-	#save acc,prec,recall metrics for this itteration 
-	AccMean.append(mean(ACC))
-	PrecMean.append(mean(PREC))
-	RecallMean.append(mean(RECALL))
-        for i in range(featureLeft):
-		ImportanceMean.append(mean(column(IMPORT,i)))
+############print to file #################
 
-	AccVar.append(stdev(ACC))
-	PrecVar.append(stdev(PREC))
-	RecallVar.append(stdev(RECALL))
-	#print ImportanceMean
-	x=0
-	Importanceittr.append([0]*nFeatuers)
-	for i in range(nFeatuers):
-		#print x
-		#print i,featureList[x]
-		if featureList[x]==i:
-			Importanceittr[count-1][i]=ImportanceMean[x]
-			if(x<len(featureList)-1):
-				x+=1
-		else:
-			Importanceittr[count-1][i]=0
-	#	ImportanceVar.append(stdev(column(IMPORT,i)))
-	ImportanceMean=[]
-	print Importanceittr
-	#Generate next itteration dataset
-	#index in new list
-	newFeature=[]
-	newFList=[]
-	for i in range(len(FeatuerLeft)):
-		if(FeatuerLeft[i]):
-			newFeature.append(i)
-			newFList.append(featureList[i]) 
-	featureList=newFList
-	#index in original list
-	
-	print featureLeft
-	print FeatuerLeft
-	#print newFeature
-	print newFList
-	featureLeft=len(newFeature)
-	trainData_new=[]
-	testData_new=[]
-	for j in range(len(subjects)):
-		trainData_new.append(transform(trainData[j],newFeature))
-		testData_new.append(transform(testData[j],newFeature))
-	
+resultsFile.write('\nSequential Floating Forward Selection:\n')
+resultsFile.write(str(sffs.k_feature_idx_)+"\n")
+resultsFile.write(str(genFeatuerName(sffs.k_feature_idx_))+"\n")
+resultsFile.write('\nCV Score:\n')
+resultsFile.write(str(sffs.k_score_)+"\n")
+resultsFile.write("\nDeataled results\n")
+resultsFile.write(str(sffs.subsets_)+"\n")
+resultsFile.write("\nfull list of featuers:\n")
+f= genFeatuerName(range(nFeatures))
+for i in f:
+    resultsFile.write(str(f.index(i))+','+str(i))
+    resultsFile.write('\n')
+resultsFile.close()
 
-
-
-plt.figure(1)
-plt.errorbar(range(count),AccMean, yerr=AccVar, marker='o')
-plt.errorbar(range(count),PrecMean, yerr=PrecVar, marker='o')
-plt.errorbar(range(count),RecallMean, yerr=RecallVar, marker='o')	
-plt.legend(['accuracy', 'precision','recall'], loc='upper right')
-axes = plt.gca()
-axes.set_xlim([-1,count+1])
-#axes.set_ylim([-0.1,1.2])
-plt.show()	
-
-plt.figure(2)
-print ImportanceMean
-for i in range(nFeatuers):
-	plt.errorbar(range(count),column(Importanceittr, i), yerr=0.001, marker='o')
-
-axes = plt.gca()
-axes.set_xlim([-1,count+1])
-#axes.set_ylim([-0.1,1.2])
-plt.show()	
-
-'''
-	
-	
-	
+#Plot results
+plot_sfs(sffs.get_metric_dict(), kind='std_dev');
+#plt.ylim([0.8, 1])
+plt.title('Sequential Forward Selection (w. StdDev)')
+plt.grid()
+plt.show()
