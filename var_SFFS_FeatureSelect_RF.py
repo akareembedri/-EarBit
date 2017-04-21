@@ -1,5 +1,4 @@
-
-# This code to perform feature slection on a leave-one-out data set 
+# This code to perform feature slection on a leave-one-user-out data set using SFF greedy algo 
 #!/usr/bin/python
 import sys
 from sklearn.ensemble import RandomForestClassifier 
@@ -27,10 +26,10 @@ classes =[ 'eating' , 'silent' , 'talking' , 'walking']#['other','walking'] #
 mainClass='eating'
 
 nTrees=100
-projectDir='/root/soundBite/datasets/Statistical_Datasets/'+testName+'/'
+projectDir='/media/mgoel1/86646EC1646EB399/Statistical_Datasets/'+testName+'/'
 subjects = ['April2Sub1','April2Sub3', 'April2Sub4', 'March24Sub1','March24Sub3','March24Sub4',\
 'March25Sub' , 'March28Sub1', 'March28Sub3', 'March28Sub4']
-nFeatuers=14*6
+
 
 
 #exteact one column from a list
@@ -84,10 +83,10 @@ def analysis(testLabels,resultsValues,mainClass):
 	return acc,prec,recall,cm,f1
 
 def my_custom_loss_func(ground_truth, predictions):
-	print "ground_truth=",len(ground_truth)
-	print ground_truth.shape, predictions.shape
+	#print "ground_truth=",len(ground_truth)
+	#print ground_truth.shape, predictions.shape
 	acc,prec,recall,cm,f1=analysis(ground_truth, predictions,mainClass)
-	print "f1= ",f1
+	#print "f1= ",f1
 	return f1
 
 #load data
@@ -96,7 +95,7 @@ def loadDataOnce():
 	allData=[]
 	allLabel=[]
 	groups=[]
-	for i in range(3):#(len(subjects)):
+	for i in range(len(subjects)):
 		
 		print "load ", subjects[i]
 		#load training and testing data
@@ -160,7 +159,7 @@ for train_index, test_index in sp:
 rfc=RandomForestClassifier(n_estimators=nTrees)
 
 #feature selection
-sffs = SFS(rfc,k_features=(1,3),forward=True,floating=True,verbose=2,scoring=score,cv=split,n_jobs=-1)
+sffs = SFS(rfc,k_features=(1,nFeatures),forward=True,floating=True,verbose=2,scoring=score,cv=split,n_jobs=-1)
 sffs = sffs.fit(X,y)
 # print results
 print('\nSequential Floating Forward Selection:')
