@@ -14,7 +14,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import LeaveOneGroupOut
 from sklearn.metrics import make_scorer
 from mlxtend.plotting import plot_sequential_feature_selection as plot_sfs
-
+from mlxtend.feature_selection import ExhaustiveFeatureSelector as EFS
 
 
 #intial veariables 
@@ -132,7 +132,7 @@ def genFeatuerName(fList):
 	return featureNames
 
 ####### Featuer selection process using SFFS ######
-resultsFileName=projectDir+'SFFS_FeatureSelectionResults.txt'
+resultsFileName=projectDir+'EFS_FeatureSelectionResults.txt'
 resultsFile=open(resultsFileName,'w')
 #generate a score function that use F1 score for eating detection
 score = make_scorer(my_custom_loss_func, greater_is_better=True)
@@ -159,16 +159,27 @@ for train_index, test_index in sp:
 rfc=RandomForestClassifier(n_estimators=nTrees)
 
 #feature selection
-sffs = SFS(rfc,k_features=(1,nFeatures),forward=True,floating=True,verbose=2,scoring=score,cv=split,n_jobs=-1)
-sffs = sffs.fit(X,y)
+efs1 = EFS(rfc, 
+           min_features=1,
+           max_features=nFeatures,
+           scoring=score,
+           print_progress=True,
+           cv=split)
+
+efs1 = efs1.fit(X, y)
+#sffs = SFS(rfc,k_features=(1,nFeatures),forward=True,floating=True,verbose=2,scoring=score,cv=split,n_jobs=-1)
+#sffs = sffs.fit(X,y)
 # print results
-print('\nSequential Floating Forward Selection:')
-print(sffs.k_feature_idx_)
-print genFeatuerName(sffs.k_feature_idx_)
-print('CV Score:')
-print(sffs.k_score_)
+print('Best accuracy score: %.2f' % efs1.best_score_)
+print('Best subset:', efs1.best_idx_)
+
+#print('\nSequential Floating Forward Selection:')
+#print(sffs.k_feature_idx_)
+print genFeatuerName(efs1.k_feature_idx_)
+#print('CV Score:')
+#print(sffs.k_score_)
 print("Deataled results")
-print(sffs.subsets_)
+print(efs1.subsets_)
 print ("full list of featuers:")
 f= genFeatuerName(range(nFeatures))
 for i in f:
@@ -178,12 +189,12 @@ for i in f:
 ############print to file #################
 
 resultsFile.write('\nSequential Floating Forward Selection:\n')
-resultsFile.write(str(sffs.k_feature_idx_)+"\n")
-resultsFile.write(str(genFeatuerName(sffs.k_feature_idx_))+"\n")
+resultsFile.write(str(efs1.best_idx_)+"\n")
+resultsFile.write(str(genFeatuerName(efs1.best_idx_))+"\n")
 resultsFile.write('\nCV Score:\n')
-resultsFile.write(str(sffs.k_score_)+"\n")
+resultsFile.write(str(efs1.best_score_)+"\n")
 resultsFile.write("\nDeataled results\n")
-resultsFile.write(str(sffs.subsets_)+"\n")
+resultsFile.write(str(efs1.subsets_)+"\n")
 resultsFile.write("\nfull list of featuers:\n")
 f= genFeatuerName(range(nFeatures))
 for i in f:
@@ -192,8 +203,40 @@ for i in f:
 resultsFile.close()
 
 #Plot results
+'''
 plot_sfs(sffs.get_metric_dict(), kind='std_dev');
 #plt.ylim([0.8, 1])
 plt.title('Sequential Forward Selection (w. StdDev)')
 plt.grid()
+plt.show()
+'''
+
+metric_dict = efs1.get_metric_dict()
+
+fig = plt.figure()
+k_feat = sorted(metric_dict.keys())
+avg = [metric_dict[k]['avg_score'] for k in k_feat]
+
+upper, lower = [], []
+for k in k_feat:
+    upper.append(metric_dict[k]['avg_score'] +
+                 metric_dict[k]['std_dev'])
+    lower.append(metric_dict[k]['avg_score'] -
+                 metric_dict[k]['std_dev'])
+
+plt.fill_between(k_feat,
+                 upper,
+                 lower,
+                 alpha=0.2,
+                 color='blue',
+                 lw=1)
+
+plt.plot(k_feat, avg, color='blue', marker='o')
+plt.ylabel('Accuracy +/- Standard Deviation')
+plt.xlabel('Number of Features')
+feature_min = len(metric_dict[k_feat[0]]['feature_idx'])
+feature_max = len(metric_dict[k_feat[-1]]['feature_idx'])
+plt.xticks(k_feat, 
+           [str(metric_dict[k]['feature_idx']) for k in k_feat], 
+           rotation=90)
 plt.show()
